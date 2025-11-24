@@ -1,0 +1,167 @@
+openapi: 3.0.3
+info:
+  title: Universal Message Router API
+  version: 1.0.0
+  description: API for routing messages between internal clients and external platforms.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+
+paths:
+  /messages:
+    post:
+      summary: Send a message
+      operationId: sendMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '202':
+          description: Message accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+
+  /messages/{messageId}:
+    get:
+      summary: Get message details
+      operationId: getMessage
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          description: Message not found
+
+  /conversations:
+    post:
+      summary: Create a conversation (Group or Private)
+      operationId: createConversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationResponse'
+
+  /files/upload-url:
+    post:
+      summary: Get a presigned URL for file upload
+      operationId: getUploadUrl
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filename:
+                  type: string
+                mime_type:
+                  type: string
+                size:
+                  type: integer
+                  format: int64
+              required:
+                - filename
+                - mime_type
+                - size
+      responses:
+        '200':
+          description: Presigned URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upload_url:
+                    type: string
+                  file_id:
+                    type: string
+                    format: uuid
+
+components:
+  schemas:
+    SendMessageRequest:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: List of file IDs uploaded previously
+      required:
+        - conversation_id
+
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, SENT, DELIVERED, READ, FAILED]
+        timestamp:
+          type: string
+          format: date-time
+
+    CreateConversationRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [PRIVATE, GROUP]
+        participants:
+          type: array
+          items:
+            type: string
+            format: uuid
+        metadata:
+          type: object
+      required:
+        - type
+        - participants
+
+    ConversationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        created_at:
+          type: string
+          format: date-time

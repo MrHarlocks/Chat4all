@@ -78,11 +78,11 @@ description: "Task list for Universal Message Router implementation"
 
 ---
 
-## Phase 4: User Story 2 - Large File Transfer (Priority: P2)
+## Phase 4: User Story 2 - Advanced File Handling (Priority: P2)
 
-**Goal**: Enable upload and download of large files (up to 2GB) via S3-compatible storage.
+**Goal**: Enable upload and download of large files (up to 2GB) via S3-compatible storage with metadata tracking.
 
-**Independent Test**: Verify file upload URL generation and successful file metadata storage.
+**Independent Test**: Verify file upload URL generation, metadata storage, and download URL generation.
 
 ### Tests for User Story 2
 
@@ -90,10 +90,12 @@ description: "Task list for Universal Message Router implementation"
 
 ### Implementation for User Story 2
 
-- [x] T024 [P] [US2] Update `Attachment` model in `src/domain/models.py` (if needed)
-- [x] T025 [US2] Implement `FileService` for presigned URL generation in `src/services/file_service.py`
-- [x] T026 [US2] Implement `POST /files/upload-url` endpoint in `src/api/v1/endpoints/files.py`
-- [x] T027 [US2] Update `MessageService` to handle messages with attachments in `src/services/message_service.py`
+- [x] T024 [P] [US2] Update `Attachment` model in `src/domain/models.py` to include `checksum`, `uploader_id`, `file_id`
+- [x] T025 [US2] Implement `FileRepository` in `src/adapters/db/file_repository.py` to store file metadata
+- [x] T026 [US2] Update `FileService` to store metadata and support `generate_download_url` in `src/services/file_service.py`
+- [x] T027 [US2] Update `POST /files/upload-url` to accept metadata and register file in DB
+- [x] T028 [US2] Implement `GET /files/{file_id}/download-url` endpoint in `src/api/v1/endpoints/files.py`
+- [x] T029 [US2] Update `MessageService` to validate `file_id` when sending messages with type "file"
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -107,125 +109,49 @@ description: "Task list for Universal Message Router implementation"
 
 ### Tests for User Story 3
 
-- [x] T028 [P] [US3] Create integration test for group creation in `tests/integration/test_groups.py`
+- [x] T030 [P] [US3] Create integration test for group creation in `tests/integration/test_groups.py`
 
 ### Implementation for User Story 3
 
-- [x] T029 [P] [US3] Implement `ConversationRepository` in `src/adapters/db/conversation_repository.py`
-- [x] T030 [US3] Implement `ConversationService` in `src/services/conversation_service.py`
-- [x] T031 [US3] Implement `POST /conversations` endpoint in `src/api/v1/endpoints/conversations.py`
-- [x] T032 [US3] Update `RouterService` to handle group message fan-out in `src/services/router_service.py`
+- [x] T031 [P] [US3] Implement `ConversationRepository` in `src/adapters/db/conversation_repository.py`
+- [x] T032 [US3] Implement `ConversationService` in `src/services/conversation_service.py`
+- [x] T033 [US3] Implement `POST /conversations` endpoint in `src/api/v1/endpoints/conversations.py`
+- [x] T034 [US3] Update `RouterService` to handle group message fan-out in `src/services/router_service.py`
 
 **Checkpoint**: All user stories should now be independently functional
 
 ---
 
-## Phase 6: User Story 4 - Message Reliability & Status (Priority: P3)
+## Phase 6: Mock Connectors & Status Simulation (Priority: P3)
 
-**Goal**: Track and expose message delivery status (Sent, Delivered, Read).
+**Goal**: Create specific mock connectors for WhatsApp and Instagram that simulate real-world latency and status updates.
 
 **Independent Test**: Verify status updates propagate from provider to database.
 
-### Tests for User Story 4
+### Tests for User Story 4 & Connectors
 
-- [x] T033 [P] [US4] Create integration test for status updates in `tests/integration/test_status.py`
+- [x] T035 [P] [US4] Create integration test for status updates in `tests/integration/test_status.py`
+- [x] T036 [P] [US4] Create integration test for full lifecycle (Send -> Mock -> Delivered -> Read)
 
-### Implementation for User Story 4
+### Implementation for Connectors & Status
 
-- [x] T034 [US4] Update `MessageRepository` to support status updates in `src/adapters/db/message_repository.py`
-- [x] T035 [US4] Implement status update consumer logic in `src/services/router_service.py`
-- [x] T036 [US4] Implement `GET /messages/{messageId}` endpoint in `src/api/v1/endpoints/messages.py`
+- [x] T037 [US4] Create `WhatsAppMockConnector` service that consumes `whatsapp.outbound` topic
+- [x] T038 [US4] Create `InstagramMockConnector` service that consumes `instagram.outbound` topic
+- [x] T039 [US4] Implement simulation logic: Log receipt -> Wait -> Send DELIVERED callback -> Wait -> Send READ callback
+- [x] T040 [US4] Update `RouterService` to route messages to specific topics (`whatsapp.outbound`, etc.) based on platform
+- [x] T041 [US4] Implement `POST /webhooks/callbacks` or similar to receive status updates from mocks
+- [ ] T042 [US4] Implement Websocket endpoint `ws://.../events` for real-time client notifications (Optional/Bonus)
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 7: Polish & Documentation
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [x] T037 [P] Update API documentation (Swagger UI) description in `src/main.py`
-- [x] T038 Implement structured logging middleware in `src/core/middleware.py`
-- [x] T039 [P] Add health check endpoint in `src/api/health.py`
-- [x] T040 Run quickstart.md validation
+- [x] T043 [P] Update API documentation (Swagger UI) description in `src/main.py`
+- [x] T044 Implement structured logging middleware in `src/core/middleware.py`
+- [x] T045 [P] Add health check endpoint in `src/api/health.py`
+- [x] T046 Update OpenAPI schema with new File and Status fields
+- [x] T047 Update technical report with delivery flows
 
 ---
-
-## Dependencies & Execution Order
-
-### Phase Dependencies
-
-- **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3+)**: All depend on Foundational phase completion
-  - User stories can then proceed in parallel (if staffed)
-  - Or sequentially in priority order (P1 → P2 → P3)
-- **Polish (Final Phase)**: Depends on all desired user stories being complete
-
-### User Story Dependencies
-
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories
-- **User Story 2 (P2)**: Can start after Foundational (Phase 2) - May integrate with US1 but should be independently testable
-- **User Story 3 (P2)**: Can start after Foundational (Phase 2) - May integrate with US1/US2 but should be independently testable
-- **User Story 4 (P3)**: Can start after Foundational (Phase 2) - Depends on US1 for message existence
-
-### Within Each User Story
-
-- Tests MUST be written and FAIL before implementation
-- Models before services
-- Services before endpoints
-- Core implementation before integration
-- Story complete before moving to next priority
-
-### Parallel Opportunities
-
-- All Setup tasks marked [P] can run in parallel
-- All Foundational tasks marked [P] can run in parallel (within Phase 2)
-- Once Foundational phase completes, all user stories can start in parallel (if team capacity allows)
-- All tests for a user story marked [P] can run in parallel
-- Models within a story marked [P] can run in parallel
-- Different user stories can be worked on in parallel by different team members
-
----
-
-## Parallel Example: User Story 1
-
-```bash
-# Launch all tests for User Story 1 together:
-Task: "Create integration test for message sending flow in tests/integration/test_send_message.py"
-Task: "Create integration test for webhook ingestion flow in tests/integration/test_webhook.py"
-
-# Launch all adapters for User Story 1 together:
-Task: "Define MessageProvider interface in src/domain/interfaces/provider.py"
-Task: "Implement MockProvider for testing in src/adapters/platforms/mock_provider.py"
-Task: "Implement MessageRepository for MongoDB operations in src/adapters/db/message_repository.py"
-```
-
----
-
-## Implementation Strategy
-
-### MVP First (User Story 1 Only)
-
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Test User Story 1 independently
-5. Deploy/demo if ready
-
-### Incremental Delivery
-
-1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 1 → Test independently → Deploy/Demo (MVP!)
-3. Add User Story 2 → Test independently → Deploy/Demo
-4. Add User Story 3 → Test independently → Deploy/Demo
-5. Each story adds value without breaking previous stories
-
-### Parallel Team Strategy
-
-With multiple developers:
-
-1. Team completes Setup + Foundational together
-2. Once Foundational is done:
-   - Developer A: User Story 1
-   - Developer B: User Story 2
-   - Developer C: User Story 3
-3. Stories complete and integrate independently

@@ -21,6 +21,10 @@ class ConversationType(str, Enum):
     PRIVATE = "PRIVATE"
     GROUP = "GROUP"
 
+class MessageType(str, Enum):
+    TEXT = "TEXT"
+    FILE = "FILE"
+
 class User(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     platform: Platform
@@ -28,8 +32,20 @@ class User(BaseModel):
     display_name: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class FileMetadata(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    filename: str
+    mime_type: str
+    size: int
+    checksum: Optional[str] = None
+    uploader_id: UUID
+    conversation_id: Optional[UUID] = None
+    object_name: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class Attachment(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+    file_id: Optional[UUID] = None
     url: str
     mime_type: str
     size: int
@@ -39,6 +55,7 @@ class Message(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     conversation_id: UUID
     sender_id: UUID
+    type: MessageType = MessageType.TEXT
     content: Optional[str] = None
     attachments: List[Attachment] = []
     status: MessageStatus = MessageStatus.PENDING

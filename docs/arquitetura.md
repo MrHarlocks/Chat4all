@@ -54,6 +54,14 @@ A arquitetura é composta pelos seguintes serviços containerizados:
 6. **Entrega**: O adaptador envia a mensagem para a API externa.
 7. **Confirmação**: Após o sucesso, o status da mensagem no MongoDB é atualizado para `SENT` ou `DELIVERED`.
 
+### 4.1 Fluxo de Status (Feedback Loop)
+
+1. **Evento Externo**: A plataforma externa (ex: WhatsApp) envia um webhook informando mudança de status (ex: `READ`).
+2. **Ingestão de Webhook**: O endpoint `/webhooks/{provider}` recebe o evento.
+3. **Processamento**: O sistema identifica a mensagem original pelo ID.
+4. **Atualização**: O status da mensagem é atualizado no banco de dados (ex: de `DELIVERED` para `READ`).
+5. **Notificação (Futuro)**: O novo status pode ser enviado via WebSocket para o cliente remetente.
+
 ## 5. Escalabilidade e Desempenho
 
 * **Assincronismo**: O uso de `asyncio` no Python e do Kafka permite que a API processe milhares de conexões simultâneas sem bloquear threads.

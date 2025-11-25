@@ -16,13 +16,13 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="""
-    Universal Message Router API
+    API do Roteador Universal de Mensagens
     
-    Features:
-    - Send and receive messages across platforms (Internal, WhatsApp, Telegram, etc.)
-    - Large file transfer support (up to 2GB)
-    - Group conversation management
-    - Message status tracking
+    Funcionalidades:
+    - Envio e recebimento de mensagens entre plataformas (Interno, WhatsApp, Telegram, etc.)
+    - Suporte a transferência de arquivos grandes (até 2GB)
+    - Gerenciamento de conversas em grupo
+    - Rastreamento de status de mensagens
     """,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )

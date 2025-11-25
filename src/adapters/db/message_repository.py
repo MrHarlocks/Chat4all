@@ -28,3 +28,11 @@ class MessageRepository:
             {"_id": str(message_id)},
             {"$set": {"status": status}}
         )
+
+    async def get_by_conversation_id(self, conversation_id: UUID, limit: int = 50, skip: int = 0) -> list[Message]:
+        db = await get_database()
+        cursor = db[self.collection_name].find({"conversation_id": str(conversation_id)}).sort("timestamp", -1).skip(skip).limit(limit)
+        messages = []
+        async for doc in cursor:
+            messages.append(Message(**doc))
+        return messages

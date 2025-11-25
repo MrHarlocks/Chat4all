@@ -2,6 +2,7 @@ from src.domain.models import Message, MessageStatus, Attachment
 from src.adapters.db.message_repository import MessageRepository
 from src.adapters.messaging.kafka_client import KafkaClient, get_kafka_producer
 from src.core.config import settings
+from src.core.logging import logger
 from uuid import uuid4, UUID
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -21,6 +22,8 @@ class MessageService:
             status=MessageStatus.PENDING,
             timestamp=datetime.now(timezone.utc)
         )
+
+        logger.info(f"New Message: [User {message.sender_id}] -> [Conv {conversation_id}] | Content: {content[:50] if content else 'No Content'}...")
 
         # 2. Persist to DB
         await self.repository.create(message)

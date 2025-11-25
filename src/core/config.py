@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_TOPIC_MESSAGES: str = "messages"
     KAFKA_TOPIC_STATUS: str = "message_status"
+    KAFKA_TOPIC_WHATSAPP_OUT: str = "whatsapp.outbound"
+    KAFKA_TOPIC_INSTAGRAM_OUT: str = "instagram.outbound"
     
     # S3/MinIO
     S3_ENDPOINT_URL: str = "http://localhost:9000"

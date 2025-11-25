@@ -19,4 +19,6 @@ class MongoDBClient:
 db_client = MongoDBClient()
 
 async def get_database():
+    if db_client.client is None:
+        db_client.connect()
     return db_client.get_db()

@@ -45,7 +45,7 @@ Recupera o histórico de mensagens de uma conversa específica.
 Envio e recuperação de mensagens individuais.
 
 ### Enviar Mensagem
-Envia uma nova mensagem para uma conversa existente.
+Envia uma nova mensagem para uma conversa existente. Suporta mensagens de texto e arquivos.
 
 *   **URL**: `/messages/`
 *   **Método**: `POST`
@@ -53,8 +53,10 @@ Envia uma nova mensagem para uma conversa existente.
     ```json
     {
       "conversation_id": "uuid-da-conversa",
-      "content": "Olá, mundo!",
-      "attachments": [] // Lista de anexos (opcional)
+      "type": "TEXT", // ou "FILE"
+      "content": "Olá, mundo!", // Opcional se type="FILE"
+      "file_id": "uuid-do-arquivo", // Obrigatório se type="FILE"
+      "attachments": [] // Lista de anexos adicionais (opcional)
     }
     ```
 *   **Resposta (201 Created)**: Objeto `Message` com status `PENDING`.
@@ -82,7 +84,10 @@ Gera uma URL pré-assinada (Presigned URL) para fazer upload direto para o Stora
     {
       "filename": "video.mp4",
       "mime_type": "video/mp4",
-      "size": 10485760 // Tamanho em bytes
+      "size": 10485760, // Tamanho em bytes
+      "uploader_id": "uuid-do-usuario",
+      "conversation_id": "uuid-da-conversa", // Opcional
+      "checksum": "sha256-hash" // Opcional
     }
     ```
 *   **Resposta (200 OK)**:
@@ -95,6 +100,18 @@ Gera uma URL pré-assinada (Presigned URL) para fazer upload direto para o Stora
     }
     ```
 
+### Gerar URL de Download
+Gera uma URL temporária para download de um arquivo.
+
+*   **URL**: `/files/{file_id}/download-url`
+*   **Método**: `GET`
+*   **Resposta (200 OK)**:
+    ```json
+    {
+      "download_url": "http://minio:9000/..."
+    }
+    ```
+
 ---
 
 ## 4. Webhooks
@@ -102,13 +119,21 @@ Gera uma URL pré-assinada (Presigned URL) para fazer upload direto para o Stora
 Integração com plataformas externas.
 
 ### Receber Webhook
-Endpoint genérico para receber eventos de plataformas externas (WhatsApp, Telegram, etc.).
+Endpoint genérico para receber eventos de plataformas externas (WhatsApp, Telegram, etc.) e atualizações de status.
 
 *   **URL**: `/webhooks/{provider}`
 *   **Método**: `POST`
 *   **Parâmetros de Rota**:
-    *   `provider`: Nome do provedor (ex: `whatsapp`, `telegram`).
+    *   `provider`: Nome do provedor (ex: `whatsapp`, `instagram`).
 *   **Corpo da Requisição**: Payload JSON enviado pelo provedor.
+    *   Para atualizações de status (interno/mock):
+        ```json
+        {
+          "event": "status_update",
+          "message_id": "uuid-da-mensagem",
+          "status": "DELIVERED" // ou "READ", "FAILED"
+        }
+        ```
 *   **Resposta (200 OK)**: Confirmação de recebimento.
 
 ---

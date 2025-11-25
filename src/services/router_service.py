@@ -7,16 +7,22 @@ from src.adapters.messaging.kafka_client import KafkaClient
 from src.adapters.db.message_repository import MessageRepository
 from src.adapters.db.conversation_repository import ConversationRepository
 from src.adapters.platforms.mock_provider import MockProvider
+from src.adapters.platforms.whatsapp_provider import WhatsAppProvider
+from src.adapters.platforms.instagram_provider import InstagramProvider
 from src.domain.interfaces.provider import MessageProvider
+from src.domain.models import Platform
 
 class RouterService:
     def __init__(self):
         self.kafka_client = KafkaClient()
         self.repository = MessageRepository()
         self.conversation_repository = ConversationRepository()
-        # In a real app, this would be a factory based on conversation/user settings
+        
         self.providers: dict[str, MessageProvider] = {
-            "mock": MockProvider()
+            Platform.INTERNAL.value: MockProvider(), # Internal/Mock
+            Platform.WHATSAPP.value: WhatsAppProvider(),
+            Platform.INSTAGRAM.value: InstagramProvider(),
+            Platform.TELEGRAM.value: MockProvider(), # Fallback to mock for now
         }
 
     async def start_consumer(self):
@@ -37,20 +43,33 @@ class RouterService:
         logger.info(f"Routing Message: {message.id} | From: {message.sender_id} | To: {message.conversation_id}")
         
         conversation = await self.conversation_repository.get_by_id(message.conversation_id)
-        if conversation and conversation.type == ConversationType.GROUP:
-            logger.info(f"Group Fan-out: {conversation.id} | Participants: {len(conversation.participants)}")
-            # In a real implementation, we would iterate participants and send to their respective providers.
-            # For MVP, we proceed to send to the 'mock' provider which represents the group channel.
+        if not conversation:
+            logger.error(f"Conversation {message.conversation_id} not found")
+            return
+
+        # Determine recipients (excluding sender)
+        # For MVP, we assume 1-1 or Group.
+        # We need to find the platform of the recipient(s).
+        # Since we don't have a full User Repository in this snippet to look up participants,
+        # we will simulate routing based on a hypothetical user lookup or just default to Mock/WhatsApp for testing.
         
-        # Logic to determine provider (simplified for MVP)
-        provider_name = "mock" 
-        provider = self.providers.get(provider_name)
+        # TODO: Real implementation would look up users. 
+        # For now, let's assume if conversation type is PRIVATE, we route to the "other" participant.
+        # If we don't have user data, we'll default to WHATSAPP for demonstration if not INTERNAL.
+        
+        # SIMULATION: Pick a provider based on some logic or random for demo
+        # In a real app, we'd do: user = user_repo.get(recipient_id); provider = providers[user.platform]
+        
+        target_platform = Platform.WHATSAPP.value # Defaulting to WhatsApp for demo purposes of the connector
+        
+        provider = self.providers.get(target_platform)
 
         if provider:
             success = await provider.send_message(message)
+            # Note: Status update to SENT happens here, but DELIVERED/READ comes from callbacks later
             new_status = MessageStatus.SENT if success else MessageStatus.FAILED
             await self.repository.update_status(message.id, new_status)
-            logger.info(f"Delivery Status: {message.id} -> {new_status} | Provider: {provider_name}")
+            logger.info(f"Delivery Status: {message.id} -> {new_status} | Provider: {target_platform}")
         else:
-            logger.error(f"Delivery Failed: No provider found for message {message.id}")
+            logger.error(f"Delivery Failed: No provider found for platform {target_platform}")
             await self.repository.update_status(message.id, MessageStatus.FAILED)

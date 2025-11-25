@@ -34,11 +34,11 @@ class RouterService:
             await self.kafka_client.stop()
 
     async def process_message(self, message: Message):
-        logger.info(f"Routing message {message.id}")
+        logger.info(f"Routing Message: {message.id} | From: {message.sender_id} | To: {message.conversation_id}")
         
         conversation = await self.conversation_repository.get_by_id(message.conversation_id)
         if conversation and conversation.type == ConversationType.GROUP:
-            logger.info(f"Fan-out for group conversation {conversation.id} with {len(conversation.participants)} participants")
+            logger.info(f"Group Fan-out: {conversation.id} | Participants: {len(conversation.participants)}")
             # In a real implementation, we would iterate participants and send to their respective providers.
             # For MVP, we proceed to send to the 'mock' provider which represents the group channel.
         
@@ -47,10 +47,10 @@ class RouterService:
         provider = self.providers.get(provider_name)
 
         if provider:
-            success = await provider.send(message)
+            success = await provider.send_message(message)
             new_status = MessageStatus.SENT if success else MessageStatus.FAILED
             await self.repository.update_status(message.id, new_status)
-            logger.info(f"Message {message.id} status updated to {new_status}")
+            logger.info(f"Delivery Status: {message.id} -> {new_status} | Provider: {provider_name}")
         else:
-            logger.error(f"No provider found for message {message.id}")
+            logger.error(f"Delivery Failed: No provider found for message {message.id}")
             await self.repository.update_status(message.id, MessageStatus.FAILED)

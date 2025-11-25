@@ -24,6 +24,19 @@ class KafkaClient:
             raise Exception("Kafka Producer not initialized")
         await self.producer.send_and_wait(topic, message)
 
+    async def consume(self, topic: str):
+        consumer = AIOKafkaConsumer(
+            topic,
+            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+            group_id="router_group"
+        )
+        await consumer.start()
+        try:
+            async for msg in consumer:
+                yield msg
+        finally:
+            await consumer.stop()
+
 kafka_client = KafkaClient()
 
 async def get_kafka_producer():

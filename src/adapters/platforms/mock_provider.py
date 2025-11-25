@@ -4,8 +4,9 @@ from uuid import uuid4
 from datetime import datetime
 
 class MockProvider(MessageProvider):
-    async def send_message(self, message: Message, to_user: User) -> bool:
-        print(f"MockProvider: Sending message {message.id} to {to_user.display_name} ({to_user.platform_id})")
+    async def send_message(self, message: Message, to_user: User = None) -> bool:
+        recipient = to_user.display_name if to_user else "Unknown User"
+        print(f"MockProvider: Sending message {message.id} to {recipient}")
         return True
 
     async def normalize_payload(self, payload: dict) -> Message:

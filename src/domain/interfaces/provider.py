@@ -3,7 +3,7 @@ from src.domain.models import Message, User
 
 class MessageProvider(ABC):
     @abstractmethod
-    async def send_message(self, message: Message, to_user: User) -> bool:
+    async def send_message(self, message: Message, to_user: User = None) -> bool:
         """Send a message to a user on this platform."""
         pass
 

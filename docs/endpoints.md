@@ -163,3 +163,39 @@ Endpoint genérico para receber eventos de plataformas externas (WhatsApp, Teleg
   "attachments": []
 }
 ```
+
+---
+
+## 5. Resumo das Alterações Recentes (v1.1)
+
+Esta seção destaca as funcionalidades adicionadas na última atualização para facilitar a sincronização com a documentação oficial.
+
+### Funcionalidade: Transferência de Arquivos
+*   **Novo Endpoint**: `POST /files/upload-url` - Gera URL assinada para upload direto (S3/MinIO).
+*   **Novo Endpoint**: `GET /files/{file_id}/download-url` - Gera URL assinada para download seguro.
+*   **Alteração em Mensagens**: O endpoint `POST /messages/` agora aceita `type="FILE"` e `file_id`.
+
+### Funcionalidade: Rastreamento de Status (Webhooks)
+*   **Novo Endpoint**: `POST /webhooks/{provider}` - Padronizado para receber callbacks de provedores.
+*   **Novo Evento**: Suporte ao evento `status_update` para atualizar mensagens para `DELIVERED` e `READ`.
+
+### Atualização de Schemas JSON
+
+**Novo Payload de Envio de Mensagem (Com Arquivo):**
+```json
+{
+  "conversation_id": "uuid",
+  "type": "FILE",
+  "content": "Legenda do arquivo (opcional)",
+  "file_id": "uuid-do-arquivo-previamente-enviado"
+}
+```
+
+**Novo Payload de Webhook (Status):**
+```json
+{
+  "event": "status_update",
+  "message_id": "uuid",
+  "status": "READ"
+}
+```

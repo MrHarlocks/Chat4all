@@ -11,6 +11,7 @@ from src.adapters.platforms.whatsapp_provider import WhatsAppProvider
 from src.adapters.platforms.instagram_provider import InstagramProvider
 from src.domain.interfaces.provider import MessageProvider
 from src.domain.models import Platform
+from src.core.metrics import MESSAGES_PROCESSED_TOTAL, ERRORS_TOTAL
 
 class RouterService:
     def __init__(self):
@@ -36,6 +37,7 @@ class RouterService:
                     await self.process_message(message)
                 except Exception as e:
                     logger.error(f"Error processing message: {e}")
+                    ERRORS_TOTAL.labels(type="kafka_processing_error").inc()
         finally:
             await self.kafka_client.stop()
 
@@ -45,6 +47,7 @@ class RouterService:
         conversation = await self.conversation_repository.get_by_id(message.conversation_id)
         if not conversation:
             logger.error(f"Conversation {message.conversation_id} not found")
+            ERRORS_TOTAL.labels(type="conversation_not_found").inc()
             return
 
         # Determine recipients (excluding sender)
@@ -70,6 +73,12 @@ class RouterService:
             new_status = MessageStatus.SENT if success else MessageStatus.FAILED
             await self.repository.update_status(message.id, new_status)
             logger.info(f"Delivery Status: {message.id} -> {new_status} | Provider: {target_platform}")
+            
+            # Metrics
+            status_label = "success" if success else "failed"
+            MESSAGES_PROCESSED_TOTAL.labels(status=status_label, type=message.type.value).inc()
         else:
             logger.error(f"Delivery Failed: No provider found for platform {target_platform}")
             await self.repository.update_status(message.id, MessageStatus.FAILED)
+            MESSAGES_PROCESSED_TOTAL.labels(status="failed", type=message.type.value).inc()
+            ERRORS_TOTAL.labels(type="provider_not_found").inc()

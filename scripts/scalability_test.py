@@ -4,14 +4,22 @@ import time
 import subprocess
 import sys
 import os
+
+# Add project root to python path
+sys.path.append(os.getcwd())
+
 from uuid import uuid4
 from src.adapters.db.mongo_client import db_client
 from src.core.config import settings
+
+import json
+from datetime import datetime
 
 # Configuration
 API_URL = f"http://localhost:8000{settings.API_V1_STR}"
 NUM_MESSAGES = 100
 NUM_WORKERS = 2
+REPORT_DIR = "tests/reports"
 
 async def send_messages(client, conversation_id, count):
     tasks = []
@@ -28,8 +36,9 @@ async def send_messages(client, conversation_id, count):
     end_time = time.time()
     
     success_count = sum(1 for r in responses if r.status_code == 201)
-    print(f"Sent {success_count}/{count} messages in {end_time - start_time:.2f}s")
-    return success_count
+    duration = end_time - start_time
+    print(f"Sent {success_count}/{count} messages in {duration:.2f}s")
+    return success_count, duration
 
 async def wait_for_processing(conversation_id, expected_count, timeout=30):
     print(f"Waiting for {expected_count} messages to be processed...")
@@ -59,6 +68,18 @@ async def run_test():
     # Ensure DB connection
     db_client.connect()
     
+    # Ensure report directory exists
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    
+    report_data = {
+        "timestamp": datetime.now().isoformat(),
+        "config": {
+            "num_messages": NUM_MESSAGES,
+            "num_workers": NUM_WORKERS
+        },
+        "results": {}
+    }
+
     # Start Workers
     workers = []
     print(f"Starting {NUM_WORKERS} workers...")
@@ -85,9 +106,17 @@ async def run_test():
         
         # Phase 1: Normal Load
         print("\n--- Phase 1: Normal Load ---")
-        await send_messages(client, conversation_id, NUM_MESSAGES)
-        await wait_for_processing(conversation_id, NUM_MESSAGES)
+        sent_count_1, send_time_1 = await send_messages(client, conversation_id, NUM_MESSAGES)
+        process_time_1 = await wait_for_processing(conversation_id, NUM_MESSAGES)
         
+        report_data["results"]["phase_1"] = {
+            "description": "Normal Load",
+            "sent_messages": sent_count_1,
+            "send_duration_seconds": send_time_1,
+            "process_duration_seconds": process_time_1,
+            "throughput_mps": NUM_MESSAGES / process_time_1 if process_time_1 else 0
+        }
+
         # Phase 2: Worker Failure
         print("\n--- Phase 2: Simulating Worker Failure ---")
         # Kill one worker
@@ -96,17 +125,32 @@ async def run_test():
         print(f"Killed worker PID: {victim.pid}")
         
         # Send more messages
-        await send_messages(client, conversation_id, NUM_MESSAGES)
+        sent_count_2, send_time_2 = await send_messages(client, conversation_id, NUM_MESSAGES)
         
         # We expect 2 * NUM_MESSAGES total processed
-        await wait_for_processing(conversation_id, NUM_MESSAGES * 2)
+        process_time_2 = await wait_for_processing(conversation_id, NUM_MESSAGES * 2)
         
+        report_data["results"]["phase_2"] = {
+            "description": "Worker Failure Recovery",
+            "sent_messages": sent_count_2,
+            "send_duration_seconds": send_time_2,
+            "process_duration_seconds": process_time_2,
+            "note": "Processing time includes recovery latency"
+        }
+
     # Cleanup
     print("\nCleaning up...")
     for p in workers:
         p.terminate()
     
     db_client.close()
+    
+    # Save Report
+    report_file = os.path.join(REPORT_DIR, f"scalability_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    with open(report_file, "w") as f:
+        json.dump(report_data, f, indent=2)
+    
+    print(f"\nTest Completed. Report saved to: {report_file}")
 
 if __name__ == "__main__":
     try:

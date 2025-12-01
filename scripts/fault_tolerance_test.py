@@ -4,6 +4,10 @@ import time
 import subprocess
 import sys
 import os
+
+# Add project root to python path
+sys.path.append(os.getcwd())
+
 from datetime import datetime
 from uuid import uuid4
 from src.adapters.db.mongo_client import db_client

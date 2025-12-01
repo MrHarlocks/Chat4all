@@ -97,3 +97,47 @@ Para rodar os testes de integração (requer Docker rodando):
 ```bash
 pytest tests/integration
 ```
+
+## 🧪 Testes Avançados e Escalabilidade
+
+### 1. Testes de Carga (Locust)
+
+Simula múltiplos usuários enviando mensagens simultaneamente.
+
+**Opção A: Interface Web (Interativo)**
+```bash
+./scripts/start_locust_ui.ps1
+```
+Acesse: `http://localhost:8089`
+
+**Opção B: Linha de Comando (Automático)**
+```bash
+./scripts/run_load_test.ps1
+```
+Gera um relatório HTML na pasta `tests/load/`.
+
+### 2. Teste de Escalabilidade Horizontal
+
+Verifica o processamento com múltiplos workers consumidores.
+
+```bash
+# 1. Preparar o Kafka (aumentar partições)
+python scripts/setup_kafka.py
+
+# 2. Rodar o teste
+python scripts/scalability_test.py
+```
+
+### 3. Teste de Tolerância a Falhas
+
+Simula a queda de workers durante o processamento.
+
+```bash
+python scripts/fault_tolerance_test.py
+```
+
+## 📊 Monitoramento
+
+- **Prometheus**: `http://localhost:9090` (Métricas)
+- **Grafana**: `http://localhost:3000` (Dashboards)
+  - Login: `admin` / `admin`

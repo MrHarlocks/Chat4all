@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-11-30T20:51:36.677276",
+  "config": {
+    "num_messages": 100,
+    "num_workers": 2
+  },
+  "results": {
+    "phase_1": {
+      "description": "Normal Load",
+      "sent_messages": 100,
+      "send_duration_seconds": 0.5784106254577637,
+      "process_duration_seconds": 0.5470232963562012,
+      "throughput_mps": 182.80757084042673
+    },
+    "phase_2": {
+      "description": "Worker Failure Recovery",
+      "sent_messages": 100,
+      "send_duration_seconds": 0.548858642578125,
+      "process_duration_seconds": 9.224395036697388,
+      "note": "Processing time includes recovery latency"
+    }
+  }
+}

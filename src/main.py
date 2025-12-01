@@ -8,6 +8,9 @@ from src.adapters.messaging.kafka_client import kafka_client
 from src.api.v1.router import api_router
 from src.api import health
 from src.services.router_service import RouterService
+from src.core.metrics import MetricsMiddleware
+from prometheus_client import make_asgi_app
+from fastapi.responses import RedirectResponse
 import asyncio
 
 setup_logging()
@@ -27,8 +30,17 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
+# Metrics Endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(MetricsMiddleware)
 add_exception_handlers(app)
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.include_router(health.router, tags=["health"])

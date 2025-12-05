@@ -25,13 +25,15 @@ class ConversationType(str, Enum):
 class Message(BaseModel):
     # Field(default_factory=...): Gera um UUID v4 único automaticamente se não fornecido.
     # Garante que cada mensagem tenha um identificador universal desde a criação.
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    
-    conversation_id: str
-    type: MessageType  # Enum que define se o payload é TEXT ou FILE
-    content: Optional[str]
-    file_id: Optional[str]
-    # ...
+    id: UUID = Field(default_factory=uuid4)
+    conversation_id: UUID
+    sender_id: UUID
+    type: MessageType = MessageType.TEXT
+    content: Optional[str] = None
+    attachments: List[Attachment] = []
+    status: MessageStatus = MessageStatus.PENDING
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    provider_metadata: Dict[str, Any] = {}
 ```
 
 **Alternativas e Justificativa:**
@@ -60,13 +62,13 @@ class MessageStatus(str, Enum):
 # Lógica no RouterService:
 # provider.send_message(message): Chama o adaptador específico (ex: WhatsApp) para realizar o envio real.
 # Retorna True se a plataforma externa aceitou a mensagem.
-success = await provider.send_message(message)
+provider = self.providers.get(target_platform)
 
-# Define o novo status com base no sucesso do envio
-new_status = MessageStatus.SENT if success else MessageStatus.FAILED
-
-# repository.update_status(...): Atualiza atomicamente o campo 'status' no documento do MongoDB
-await self.repository.update_status(message.id, new_status)
+if provider:
+    success = await provider.send_message(message)
+    # Note: Status update to SENT happens here, but DELIVERED/READ comes from callbacks later
+    new_status = MessageStatus.SENT if success else MessageStatus.FAILED
+    await self.repository.update_status(message.id, new_status)
 ```
 
 **Alternativas e Justificativa:**
@@ -88,23 +90,24 @@ await self.repository.update_status(message.id, new_status)
 # Dicionário de estratégias (Pattern Strategy):
 # Mapeia o enum da plataforma para a instância concreta do adaptador.
 self.providers: dict[str, MessageProvider] = {
-    Platform.INTERNAL.value: MockProvider(),       # Simula envio interno
-    Platform.WHATSAPP.value: WhatsAppProvider(),   # Adaptador Meta API
-    Platform.INSTAGRAM.value: InstagramProvider(), # Adaptador Instagram Graph API
+    Platform.INTERNAL.value: MockProvider(), # Internal/Mock
+    Platform.WHATSAPP.value: WhatsAppProvider(),
+    Platform.INSTAGRAM.value: InstagramProvider(),
+    Platform.TELEGRAM.value: MockProvider(), # Fallback to mock for now
 }
 
 # Lógica de Roteamento:
+# providers.get(target_platform): Seleciona o adaptador correto em tempo de execução (Polimorfismo).
+provider = self.providers.get(target_platform)
+
+if provider:
     # Chama o método padronizado da interface, independente da plataforma subjacente.
-    await provider.send_message(message)
+    success = await provider.send_message(message)
 ```
 
 **Alternativas e Justificativa:**
 - **Alternativa:** *Blocos If/Else gigantes* ou *Microserviços separados por canal*.
 - **Por que escolhemos Strategy Pattern:** *If/Else* torna o código inmanutenível rapidamente. *Microserviços* adicionariam latência de rede e complexidade operacional desnecessária neste estágio. O **Strategy Pattern** permite adicionar novos canais (ex: Telegram) apenas criando uma nova classe, sem tocar no código de roteamento existente (Open/Closed Principle).
-
-### 2.4 Persistência padronizado da interface, independente da plataforma subjacente.
-    await provider.send_message(message)
-```
 
 ### 2.4 Persistência
 
@@ -119,8 +122,17 @@ self.providers: dict[str, MessageProvider] = {
 
 ```python
 async def create(self, message: Message) -> Message:
+    # message.model_dump(mode='json'): Converte o modelo Pydantic para um dicionário Python compatível com BSON.
+    db = await get_database()
+    message_dict = message.model_dump(mode='json')
+    message_dict['_id'] = str(message.id)
+    
+    # collection.insert_one(...): Método do driver Motor (MongoDB Async).
     # Insere o documento de forma assíncrona, liberando o Event Loop durante a I/O.
-    await self.collection.insert_one(message_dict)
+    await db[self.collection_name].insert_one(message_dict)
+    return message
+``` message_dict['_id'] = str(message.id)
+    await db[self.collection_name].insert_one(message_dict)
     return message
 ```
 
@@ -134,13 +146,29 @@ async def create(self, message: Message) -> Message:
 
 **Implementação:**
 
-- **FastAPI:** Framework utilizado para expor endpoints RESTful.
-- **Endpoints:** `/conversations`, `/messages`, `/files`.
+- **Roteamento Modular:** Uso de `APIRouter` para organizar endpoints por domínio.
+- **Separação de Responsabilidades:** Cada módulo (`messages`, `files`) tem seu próprio roteador.
 
 *Trecho de Código (`src/api/v1/router.py`):*
 
+```python
+# APIRouter(): Classe do FastAPI para agrupar rotas relacionadas.
+api_router = APIRouter()
+
+# include_router(...): Monta os sub-roteadores na rota principal.
+# prefix="/conversations": Define que todas as rotas desse módulo começarão com esse prefixo.
+# tags=["conversations"]: Agrupa as rotas na documentação Swagger UI.
 api_router.include_router(messages.router, prefix="/messages", tags=["messages"])
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(files.router, prefix="/files", tags=["files"])
+api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
+
+api_router = APIRouter()
+
+api_router.include_router(messages.router, prefix="/messages", tags=["messages"])
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(files.router, prefix="/files", tags=["files"])
+api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 ```
 
 **Alternativas e Justificativa:**
@@ -153,13 +181,32 @@ api_router.include_router(files.router, prefix="/files", tags=["files"])
 
 **Implementação:**
 
-- **Interface:** A classe abstrata `MessageProvider` define o contrato que qualquer novo canal deve seguir.
+- **Interface Padrão:** `MessageProvider` define o contrato que todos os adaptadores devem seguir.
+- **Normalização:** Garante que mensagens de diferentes fontes sejam convertidas para o formato interno.
 
 *Trecho de Código (`src/domain/interfaces/provider.py`):*
 
 ```python
+class MessageProvider(ABC):
+    # @abstractmethod: Decorator que obriga as subclasses a implementarem este método.
+    # Garante que todo adaptador saiba enviar mensagens.
     @abstractmethod
-    async def send_file(self, message: Message, file_url: str) -> bool:
+    async def send_message(self, message: Message, to_user: User = None) -> bool:
+        """Send a message to a user on this platform."""
+        pass
+
+    # Contrato para normalização de payload, garantindo uniformidade entre canais.
+    @abstractmethod
+    async def normalize_payload(self, payload: dict) -> Message:
+        """Convert external platform payload to internal Message entity."""
+        pass
+``` async def send_message(self, message: Message, to_user: User = None) -> bool:
+        """Send a message to a user on this platform."""
+        pass
+
+    @abstractmethod
+    async def normalize_payload(self, payload: dict) -> Message:
+        """Convert external platform payload to internal Message entity."""
         pass
 ```
 
@@ -173,23 +220,40 @@ api_router.include_router(files.router, prefix="/files", tags=["files"])
 
 ### 3.1 Escalabilidade
 
-**Requisito:** Suportar alto tráfego, arquitetura stateless, auto-scale.
+**Requisito:** Capacidade de processar alto volume de mensagens.
 
 **Implementação:**
 
-- **Desacoplamento:** Uso de **Apache Kafka** para desacoplar a recepção (API) do processamento (Workers).
-- **Workers Independentes:** O script `src/worker.py` pode ser instanciado N vezes (escalabilidade horizontal) para aumentar o throughput de consumo.
+- **Workers Assíncronos:** Scripts Python rodando em background consumindo do Kafka.
+- **Escala Horizontal:** Múltiplos workers podem rodar em paralelo (Consumer Groups).
 
 *Trecho de Código (`src/worker.py`):*
 
 ```python
 # Este script roda isolado da API e pode ter múltiplas réplicas rodando em paralelo.
 async def main():
+    # Initialize DB connection
+    db_client.connect()
+    
+    # Initialize Router Service
     service = RouterService()
     
-    # start_consumer(): Inicia o loop infinito de consumo do Kafka.
-    # Ele lê mensagens do tópico 'messages' e as processa uma a uma.
-    await service.start_consumer() 
+    logger.info(f"Starting Router Worker (PID: {os.getpid()})...")
+    try:
+        # start_consumer(): Inicia o loop infinito de consumo do Kafka.
+        # Ele lê mensagens do tópico 'messages' e as processa uma a uma.
+        await service.start_consumer()
+```python
+async def main():
+    # Initialize DB connection
+    db_client.connect()
+    
+    # Initialize Router Service
+    service = RouterService()
+    
+    logger.info(f"Starting Router Worker (PID: {os.getpid()})...")
+    try:
+        await service.start_consumer()
 ```
 
 **Alternativas e Justificativa:**
@@ -259,16 +323,42 @@ async def main():
 *Trecho de Código (`src/services/file_service.py`):*
 
 ```python
-def generate_upload_url(self, filename: str) -> dict:
-    # generate_presigned_url(...): Método do Boto3 (AWS SDK).
-    # Cria uma URL temporária e segura que permite ao frontend fazer PUT direto no Bucket S3.
-    # 'ExpiresIn=3600': A URL expira em 1 hora.
-    url = self.s3_client.generate_presigned_url(
-        'put_object',
-        Params={'Bucket': settings.MINIO_BUCKET, 'Key': object_name},
-        ExpiresIn=3600
-    )
-    return {"upload_url": url, "file_id": object_name}
+    async def generate_upload_url(
+        self, 
+        filename: str, 
+        mime_type: str, 
+        size: int, 
+        uploader_id: UUID, 
+        conversation_id: Optional[UUID] = None,
+        checksum: Optional[str] = None
+    ):
+        file_id = uuid4()
+        extension = filename.split('.')[-1] if '.' in filename else 'bin'
+        object_name = f"{file_id}.{extension}"
+        
+        # Note: generate_presigned_url is synchronous in boto3, but we wrap it in async service method
+        # for consistency and potential future async implementation
+        # generate_presigned_url(...): Método do Boto3 (AWS SDK).
+        # Cria uma URL temporária e segura que permite ao frontend fazer PUT direto no Bucket S3.
+        upload_url = self.s3.generate_presigned_url(object_name, method='put_object')
+        
+        # Construct a public URL (assuming bucket policy allows read or using MinIO browser)
+        # In production, this might be a CloudFront URL
+        public_url = f"{settings.S3_ENDPOINT_URL}/{settings.S3_BUCKET_NAME}/{object_name}"
+
+        # Save metadata
+        file_metadata = FileMetadata(
+            id=file_id,
+            filename=filename,
+            mime_type=mime_type,
+            size=size,
+            uploader_id=uploader_id,
+            conversation_id=conversation_id,
+            checksum=checksum
+        )
+        await self.file_metadata_repo.create(file_metadata)
+
+        return upload_url, public_url
 ```
 
 **Alternativas e Justificativa:**
@@ -288,24 +378,56 @@ def generate_upload_url(self, filename: str) -> dict:
 
 ```python
 # Counter: Métrica cumulativa que só aumenta (ex: total de requisições).
-MESSAGES_PROCESSED_TOTAL = Counter('messages_processed_total', ...)
+# Usado para contar eventos discretos, como mensagens processadas.
+MESSAGES_PROCESSED_TOTAL = Counter(
+    'messages_processed_total', 
+    'Total number of messages processed',
+    ['status', 'type']
+)
 
 # Histogram: Agrupa observações (como latência) em buckets para calcular percentis (P95, P99).
-MESSAGE_LATENCY_SECONDS = Histogram('message_latency_seconds', ...)
+# Essencial para entender a performance e distribuição do tempo de resposta.
+MESSAGE_LATENCY_SECONDS = Histogram(
+    'message_latency_seconds',
+    'Time spent processing messages',
+    ['operation']
+)
 
-# Middleware coleta automaticamente:
-# labels(...): Adiciona dimensões à métrica (ex: endpoint acessado).
-# observe(duration): Registra o tempo que a requisição levou.
-MESSAGE_LATENCY_SECONDS.labels(operation=scope['path']).observe(duration)
+# Middleware: Intercepta todas as requisições HTTP.
+# Permite coletar métricas de forma transparente sem poluir a lógica de negócio.
+class MetricsMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Gauge: Métrica que pode subir e descer.
+        # Útil para monitorar estado atual, como conexões ativas.
+        ACTIVE_CONNECTIONS.inc()
+        start_time = time.time()
+        
+        try:
+            await self.app(scope, receive, send)
+        except Exception as e:
+            ERRORS_TOTAL.labels(type=type(e).__name__).inc()
+            raise e
+        finally:
+            ACTIVE_CONNECTIONS.dec()
+            duration = time.time() - start_time
+            # observe(duration): Registra o tempo que a requisição levou no histograma.
+            MESSAGE_LATENCY_SECONDS.labels(operation=scope['path']).observe(duration)
 ```
 
 **Alternativas e Justificativa:**
 - **Alternativa:** *ELK Stack (Elasticsearch)* ou *SaaS (Datadog, New Relic)*.
 - **Por que escolhemos Prometheus/Grafana:** ELK é focado em logs e muito pesado. SaaS é caro. **Prometheus** é o padrão cloud-native para métricas (time-series), leve e open-source, integrando perfeitamente com Kubernetes no futuro.
 
-### 3.9 Extensibilidade/Manutenibilidade
+### 3.8 Documentação e Arquitetura
 
-**Requisito:** Clean interface, Swagger.
+**Requisito:** Documentação automática e código desacoplado.
 
 **Implementação:**
 
@@ -318,10 +440,38 @@ MESSAGE_LATENCY_SECONDS.labels(operation=scope['path']).observe(duration)
 # FastAPI(...): Inicializa a aplicação.
 # Os parâmetros title e description são usados para gerar a página HTML do Swagger UI.
 app = FastAPI(
-    title="Chat4all - Universal Message Router",
-    description="Documentação automática gerada pelo FastAPI (Swagger UI)",
-    # ...
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    description="""
+    API do Roteador Universal de Mensagens
+    
+    Funcionalidades:
+    - Envio e recebimento de mensagens entre plataformas (Interno, WhatsApp, Telegram, etc.)
+    - Suporte a transferência de arquivos grandes (até 2GB)
+    - Gerenciamento de conversas em grupo
+    - Rastreamento de status de mensagens
+    """,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# Metrics Endpoint: Exposição de métricas para o Prometheus.
+# O Prometheus faz scraping neste endpoint periodicamente.
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+# Middlewares: Camadas que processam requisições antes de chegar nas rotas.
+# LoggingMiddleware: Loga detalhes de cada requisição.
+# MetricsMiddleware: Coleta métricas de tempo e contagem.
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(MetricsMiddleware)
+
+# Exception Handlers: Tratamento global de erros.
+# Garante que erros não tratados retornem respostas JSON padronizadas.
+add_exception_handlers(app)
+
+# Include Router: Registra as rotas da API (v1).
+app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(health.router, tags=["health"])
 ```
 
 **Alternativas e Justificativa:**

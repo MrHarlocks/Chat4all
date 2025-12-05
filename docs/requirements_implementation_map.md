@@ -34,6 +34,10 @@ class Message(BaseModel):
     # ...
 ```
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *RabbitMQ* ou *HTTP Polling*.
+- **Por que escolhemos Kafka/Mongo:** O RabbitMQ é excelente para filas de tarefas, mas o **Kafka** oferece retenção de mensagens (log) e replayabilidade, crucial para histórico de chat e recuperação de falhas. O **MongoDB** foi escolhido em vez de SQL (PostgreSQL) pela flexibilidade do schema (mensagens de texto, arquivo, localização variam muito) e alta performance de escrita (write-heavy).
+
 ### 2.2 Controle de Envio / Entrega / Leitura
 
 **Requisito:** Estados SENT, DELIVERED, READ. Idempotência via `message_id`.
@@ -65,6 +69,10 @@ new_status = MessageStatus.SENT if success else MessageStatus.FAILED
 await self.repository.update_status(message.id, new_status)
 ```
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *Auto-increment IDs (Banco de Dados)* e *Polling de Status*.
+- **Por que escolhemos UUID v4:** IDs sequenciais vazam informações de volume e exigem round-trip ao banco para serem gerados. **UUIDs** permitem criação offline no cliente e garantem idempotência global. Atualizações atômicas evitam condições de corrida que ocorreriam com transações complexas em bancos SQL.
+
 ### 2.3 Multiplataforma e Roteamento
 
 **Requisito:** Escolha de canais, Broker unificador, Mapeamento de usuários.
@@ -86,11 +94,15 @@ self.providers: dict[str, MessageProvider] = {
 }
 
 # Lógica de Roteamento:
-# providers.get(target_platform): Seleciona o adaptador correto em tempo de execução (Polimorfismo).
-provider = self.providers.get(target_platform)
-
-if provider:
     # Chama o método padronizado da interface, independente da plataforma subjacente.
+    await provider.send_message(message)
+```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Blocos If/Else gigantes* ou *Microserviços separados por canal*.
+- **Por que escolhemos Strategy Pattern:** *If/Else* torna o código inmanutenível rapidamente. *Microserviços* adicionariam latência de rede e complexidade operacional desnecessária neste estágio. O **Strategy Pattern** permite adicionar novos canais (ex: Telegram) apenas criando uma nova classe, sem tocar no código de roteamento existente (Open/Closed Principle).
+
+### 2.4 Persistência padronizado da interface, independente da plataforma subjacente.
     await provider.send_message(message)
 ```
 
@@ -107,14 +119,14 @@ if provider:
 
 ```python
 async def create(self, message: Message) -> Message:
-    # message.dict(): Converte o modelo Pydantic para um dicionário Python compatível com BSON.
-    message_dict = message.dict()
-    
-    # collection.insert_one(...): Método do driver Motor (MongoDB Async).
     # Insere o documento de forma assíncrona, liberando o Event Loop durante a I/O.
     await self.collection.insert_one(message_dict)
     return message
 ```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Armazenar arquivos como BLOBs no Banco* ou *Filesystem local*.
+- **Por que escolhemos S3/MinIO:** BLOBs incham o banco de dados, tornando backups lentos e caros. Filesystem local não escala horizontalmente (se a API escalar para 2 máquinas, uma não vê o arquivo da outra). **Object Storage (S3)** é o padrão da indústria para escalabilidade infinita e baixo custo de armazenamento.
 
 ### 2.5 API Pública
 
@@ -127,17 +139,13 @@ async def create(self, message: Message) -> Message:
 
 *Trecho de Código (`src/api/v1/router.py`):*
 
-```python
-# APIRouter(): Classe do FastAPI para agrupar rotas relacionadas.
-api_router = APIRouter()
-
-# include_router(...): Monta os sub-roteadores na rota principal.
-# prefix="/conversations": Define que todas as rotas desse módulo começarão com esse prefixo.
-# tags=["conversations"]: Agrupa as rotas na documentação Swagger UI.
-api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 api_router.include_router(messages.router, prefix="/messages", tags=["messages"])
 api_router.include_router(files.router, prefix="/files", tags=["files"])
 ```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Flask* ou *Django*.
+- **Por que escolhemos FastAPI:** Flask é síncrono por padrão (bloqueante). Django é robusto mas pesado ("baterias inclusas"). **FastAPI** é nativamente assíncrono (performance próxima a NodeJS/Go), usa **Pydantic** para validação automática (menos código de boilerplate) e gera Swagger automaticamente, acelerando a integração com o Frontend.
 
 ### 2.6 Extensibilidade de Canais
 
@@ -150,18 +158,14 @@ api_router.include_router(files.router, prefix="/files", tags=["files"])
 *Trecho de Código (`src/domain/interfaces/provider.py`):*
 
 ```python
-class MessageProvider(ABC):
-    # @abstractmethod: Decorator que obriga as subclasses a implementarem este método.
-    # Garante que todo adaptador saiba enviar mensagens.
-    @abstractmethod
-    async def send_message(self, message: Message) -> bool:
-        pass
-
-    # Contrato para envio de arquivos, garantindo uniformidade entre canais.
     @abstractmethod
     async def send_file(self, message: Message, file_url: str) -> bool:
         pass
 ```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Duck Typing* (Python padrão) ou *Herança Concreta*.
+- **Por que escolhemos Classes Abstratas (ABC):** Duck typing pode causar erros em tempo de execução se um método faltar. **ABCs** garantem que o contrato seja validado em tempo de inicialização/importação, impedindo que a aplicação suba se um novo adaptador estiver incompleto.
 
 ---
 
@@ -188,6 +192,10 @@ async def main():
     await service.start_consumer() 
 ```
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *Celery + Redis* ou *Threads em Background na API*.
+- **Por que escolhemos Kafka + Workers:** Threads na API consomem CPU do servidor web e morrem se a API reiniciar. Celery é ótimo para tarefas, mas o **Kafka** permite processamento de stream real, replay de eventos passados e desacoplamento total. Workers independentes permitem escalar o processamento (CPU-bound) separadamente da API (IO-bound).
+
 ### 3.2 Alta Disponibilidade / Tolerância a Falhas
 
 **Requisito:** Failover automático, detecção de falhas.
@@ -196,6 +204,10 @@ async def main():
 
 - **Infraestrutura:** Docker Compose com serviços resilientes (Kafka, Mongo).
 - **Recuperação:** Testes demonstraram (`scripts/fault_tolerance_test.py`) que se um worker cai, o grupo de consumidores do Kafka rebalanceia e outros workers assumem a carga.
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Kubernetes (K8s)* ou *Cluster de VMs*.
+- **Por que escolhemos Docker Compose + Consumer Groups:** K8s adicionaria complexidade operacional imensa para o estágio atual. O mecanismo nativo de **Consumer Groups do Kafka** já oferece failover automático de processamento sem precisar de orquestradores complexos.
 
 ### 3.3 Consistência & Garantias
 
@@ -206,6 +218,10 @@ async def main():
 - **Kafka:** Garante a ordem dentro da partição.
 - **MongoDB:** Garante a persistência atômica do documento da mensagem antes do envio para a fila.
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *Two-Phase Commit (2PC)* ou *Transações Distribuídas*.
+- **Por que escolhemos Consistência Eventual:** 2PC é lento e bloqueante, matando a performance. A combinação de **Ordem por Partição (Kafka)** e **Atomicidade de Documento (Mongo)** é suficiente para garantir a ordem causal de um chat (quem falou o que e quando) com performance muito superior.
+
 ### 3.4 Latência
 
 **Requisito:** <200ms para caminhos internos.
@@ -215,6 +231,10 @@ async def main():
 - **Assincronismo:** Uso de `asyncio` e `Motor` (driver Mongo async) em toda a stack para não bloquear I/O.
 - **Métricas:** Monitoramento via Prometheus mostra latência média de processamento na casa dos milissegundos (verificado nos dashboards).
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *Threading* ou *Drivers Síncronos (PyMongo)*.
+- **Por que escolhemos Asyncio:** Threads têm overhead de memória e troca de contexto. **Asyncio** permite lidar com milhares de conexões simultâneas (WebSocket/HTTP) em uma única thread, ideal para I/O bound como chat.
+
 ### 3.5 Throughput
 
 **Requisito:** Milhares de mensagens/s.
@@ -223,6 +243,10 @@ async def main():
 
 - **Batching:** Kafka suporta envio e consumo em lote.
 - **Particionamento:** O tópico `messages` foi configurado com 4 partições (`scripts/setup_kafka.py`) para permitir paralelismo de até 4 workers simultâneos.
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Processamento Serial* ou *Webhooks HTTP diretos*.
+- **Por que escolhemos Batching + Particionamento:** Webhooks diretos podem derrubar o recebedor em picos de tráfego (DDoS acidental). O **Kafka** age como um buffer (backpressure), e o particionamento permite paralelizar o trabalho infinitamente apenas adicionando mais workers.
 
 ### 3.6 Armazenamento de Arquivos
 
@@ -246,6 +270,10 @@ def generate_upload_url(self, filename: str) -> dict:
     )
     return {"upload_url": url, "file_id": object_name}
 ```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Upload via API (Proxy)*.
+- **Por que escolhemos Presigned URLs:** Fazer upload via API consome memória e threads do servidor de aplicação enquanto o arquivo trafega. **Presigned URLs** permitem que o cliente fale direto com o Storage (S3), liberando a API para processar apenas metadados leves.
 
 ### 3.7 Operacional / Observabilidade
 
@@ -271,6 +299,10 @@ MESSAGE_LATENCY_SECONDS = Histogram('message_latency_seconds', ...)
 MESSAGE_LATENCY_SECONDS.labels(operation=scope['path']).observe(duration)
 ```
 
+**Alternativas e Justificativa:**
+- **Alternativa:** *ELK Stack (Elasticsearch)* ou *SaaS (Datadog, New Relic)*.
+- **Por que escolhemos Prometheus/Grafana:** ELK é focado em logs e muito pesado. SaaS é caro. **Prometheus** é o padrão cloud-native para métricas (time-series), leve e open-source, integrando perfeitamente com Kubernetes no futuro.
+
 ### 3.9 Extensibilidade/Manutenibilidade
 
 **Requisito:** Clean interface, Swagger.
@@ -291,3 +323,7 @@ app = FastAPI(
     # ...
 )
 ```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *MVC (Model-View-Controller)* ou *Monólito em Camadas*.
+- **Por que escolhemos Arquitetura Hexagonal (Ports & Adapters):** MVC acopla a lógica de negócio ao framework web. A **Arquitetura Hexagonal** isola o `domain` (regras de negócio) de detalhes externos como Banco de Dados ou API. Isso permite testar a lógica de negócio sem subir o banco e trocar o Kafka por RabbitMQ (ou vice-versa) mexendo apenas nos adaptadores, sem risco de quebrar a regra de negócio.

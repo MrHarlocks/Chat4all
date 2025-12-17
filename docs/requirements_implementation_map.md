@@ -214,6 +214,42 @@ class MessageProvider(ABC):
 - **Alternativa:** *Duck Typing* (Python padrão) ou *Herança Concreta*.
 - **Por que escolhemos Classes Abstratas (ABC):** Duck typing pode causar erros em tempo de execução se um método faltar. **ABCs** garantem que o contrato seja validado em tempo de inicialização/importação, impedindo que a aplicação suba se um novo adaptador estiver incompleto.
 
+### 2.7 Interface Gráfica (UI)
+
+**Requisito:** Visualização gráfica de mensagens 1:1 e grupos, com status de entrega (Pendente, Enviado, Entregue).
+
+**Implementação:**
+
+- **Frontend SPA:** Single Page Application simples servida estaticamente pela API.
+- **Polling:** O frontend consulta periodicamente a API para atualizar mensagens.
+- **Status Visual:** Ícones indicam o estado atual da mensagem.
+
+*Trecho de Código (`src/static/app.js`):*
+
+```javascript
+// Polling loop para buscar novas mensagens a cada 2 segundos
+function loadConversation(conversationId) {
+    // ...
+    pollInterval = setInterval(fetchMessages, 2000);
+}
+
+function renderMessages(messages) {
+    // ...
+    messages.forEach(msg => {
+        let statusIcon = '';
+        if (msg.status === 'PENDING') statusIcon = '🕒';
+        else if (msg.status === 'SENT') statusIcon = '✓';
+        else if (msg.status === 'DELIVERED') statusIcon = '✓✓';
+        // ...
+        div.innerHTML = `... <div class="status">${statusIcon} ${msg.status}</div>`;
+    });
+}
+```
+
+**Alternativas e Justificativa:**
+- **Alternativa:** *Frameworks Completos (React/Vue)* ou *WebSockets*.
+- **Por que escolhemos HTML/JS Puro + Polling:** Para manter a simplicidade e não introduzir complexidade de build tools (Webpack/Vite) neste estágio. O polling é suficiente para o MVP e evita a complexidade de gerenciar conexões WebSocket persistentes no backend (embora o backend suporte Asyncio).
+
 ---
 
 ## 3. Requisitos Não-Funcionais (NFR)

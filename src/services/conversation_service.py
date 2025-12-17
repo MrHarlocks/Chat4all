@@ -26,3 +26,6 @@ class ConversationService:
 
     async def get_messages(self, conversation_id: UUID, limit: int = 50, skip: int = 0) -> List[Message]:
         return await self.message_repository.get_by_conversation_id(conversation_id, limit, skip)
+
+    async def list_user_conversations(self, user_id: UUID) -> List[Conversation]:
+        return await self.repository.get_by_participant(user_id)

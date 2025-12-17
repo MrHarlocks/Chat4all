@@ -47,3 +47,16 @@ async def get_conversation_messages(
         return await service.get_messages(conversation_id, limit, skip)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/user/{user_id}", response_model=List[Conversation], summary="Listar conversas do usuário")
+async def list_user_conversations(
+    user_id: UUID,
+    service: ConversationService = Depends(ConversationService)
+):
+    """
+    Lista todas as conversas onde o usuário é participante.
+    """
+    try:
+        return await service.list_user_conversations(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

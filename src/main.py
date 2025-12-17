@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from src.core.config import settings
 from src.core.logging import setup_logging
 from src.core.exceptions import add_exception_handlers
@@ -37,6 +38,9 @@ app.mount("/metrics", metrics_app)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(MetricsMiddleware)
 add_exception_handlers(app)
+
+# Mount Static Files (UI)
+app.mount("/ui", StaticFiles(directory="src/static", html=True), name="ui")
 
 @app.get("/", include_in_schema=False)
 async def root():

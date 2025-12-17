@@ -19,3 +19,11 @@ class ConversationRepository:
         if data:
             return Conversation(**data)
         return None
+
+    async def get_by_participant(self, user_id: UUID) -> list[Conversation]:
+        db = await get_database()
+        cursor = db[self.collection_name].find({"participants": str(user_id)})
+        conversations = []
+        async for doc in cursor:
+            conversations.append(Conversation(**doc))
+        return conversations

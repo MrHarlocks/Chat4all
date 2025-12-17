@@ -34,3 +34,6 @@ class UserService:
             display_name=display_name or f"User {str(new_id)[:8]}"
         )
         return await self.repository.create(new_user)
+
+    async def get_by_name(self, name: str) -> User:
+        return await self.repository.get_by_display_name(name)

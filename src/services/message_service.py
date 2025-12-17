@@ -16,6 +16,7 @@ class MessageService:
     async def send_message(
         self, 
         conversation_id: UUID, 
+        sender_id: UUID,
         message_type: MessageType = MessageType.TEXT,
         content: Optional[str] = None, 
         file_id: Optional[UUID] = None,
@@ -52,7 +53,7 @@ class MessageService:
         message = Message(
             id=uuid4(),
             conversation_id=conversation_id,
-            sender_id=uuid4(), # TODO: Get from auth context
+            sender_id=sender_id, 
             type=message_type,
             content=content,
             attachments=final_attachments,

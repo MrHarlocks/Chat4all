@@ -9,6 +9,7 @@ router = APIRouter()
 
 class SendMessageRequest(BaseModel):
     conversation_id: UUID
+    sender_id: UUID
     type: MessageType = MessageType.TEXT
     content: Optional[str] = None
     file_id: Optional[UUID] = None
@@ -23,6 +24,7 @@ async def send_message(
     Envia uma mensagem para uma conversa.
     
     - **conversation_id**: ID da conversa de destino
+    - **sender_id**: ID do remetente
     - **type**: Tipo da mensagem (TEXT, FILE, etc.)
     - **content**: Conteúdo de texto da mensagem (opcional)
     - **file_id**: ID do arquivo anexado (se type=FILE)
@@ -31,6 +33,7 @@ async def send_message(
     try:
         return await service.send_message(
             conversation_id=request.conversation_id,
+            sender_id=request.sender_id,
             message_type=request.type,
             content=request.content,
             file_id=request.file_id,
